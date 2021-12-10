@@ -1,154 +1,134 @@
-####################################################
-## Darragh Nimmo
-## Trinity College Dublin
-## April 2021
-# Snakemake workflow for single-end ChIP-seq preprocessing and peak calling.
-# Adjust for peak calling (e.g. broad/narrow) as necessary.
-####################################################
 
-
-###############################################################################################
-###IMPORTS and variables
-###############################################################################################
+################################################
+#ChIP-seq processing script
+#Darragh Nimmo
+#November 2021
+#################################################
 
 import os
+import glob
 
-import functools
+file_dir = "/home/darragh/ChIP-seq_2/data/concat/PDAC"
 
-configfile: 'config.yaml'
+file_list = []
 
-READS_DIR = config['reads_dir']
+cell_label = "HPEC"
+#assay_label = "H3K27me3"
 
-GENOME = config['genome']
-
-BLACK_LIST = config['black_list'] 
-
-PICARD_JAR = config['picard_jar']
-
-CONTROL = config['control']
+configfile: 'config.yml'
 
 
-directory_function = functools.partial(os.path.join, config['results'])
-BAM_DIR = directory_function('Bam')
-PEAK_DIR = directory_function('Peak')
-
-
-
-###############################################################################################
-###Rules
-###############################################################################################
+#CELL = config['cell_type']
+ASSAY = config['assay_type']
 
 rule all:
     input:
-        expand(os.path.join(BIGWIG_DIR, '{sample}.bigwig'), sample = SAMPLE)
-        expand(os.path.join(PEAK_DIR, '{sample}_processed_peaks.bed'), sample = SAMPLE)
-        
+ #       expand(os.path.join(file_dir,cell_label,'{assay}', cell_label+'_{assay}_fastqc.html'), assay = ASSAY),
+        expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam'), assay = ASSAY),
+        expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam'), assay = ASSAY),
+        expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam'), assay = ASSAY),
+        expand(os.path.join(file_dir,cell_label,'{assay}','Bigwig','{assay}_maked_dup.sorted.bw'), assay = ASSAY)
 
-#rule trim_adapters:
-#    input:
-#        reads = os.path.join(READS_DIR, '{sample}.fq.gz')
-#    output:
-#        reads = os.path.join(READS_DIR, '{sample}_trimmed.fq.gz')
-#    params:
-#        dir = READS_DIR
-#        extra = "-a AGATCGGAAGAG"
-#    message:
-#        "Trimming adapters from the sequencing reads"
-#    shell:
-#        """
-#        trim_galore -o {params.dir} {params.extra}  {input.reads}
-#        """
 
-rule alignment:
+
+
+rule concatenate_lanes:
+    run:
+        for assay_label in assay_list:
+            if not os.path.exists('/home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label):
+                os.makedirs('/home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label)#
+
+                os.system('cp /home/darragh/ChIP-seq_2/data/'+cell_label+'*'+assay_label+'*/*.fastq.gz' ' /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+ assay_label)#
+
+            os.system('zcat /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label+'/*.fastq.gz | pigz >  /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label+'/'+cell_label+'_'+assay_label+'.fq.gz')
+            os.system('rm /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label+'/*.fastq.gz')
+
+
+rule check_quality:
     input:
-        reads = os.path.join(READS_DIR, '{sample}_trimmed.fq.gz')
+        raw_read = os.path.join(file_dir,cell_label,'{assay}', cell_label+'_R2_{assay}.fq.gz')
     output:
-        bam = os.path.join(BAM_DIR, '{sample}_mapped.bam')
-    message:
-        "Aligning reads to the reference genome"
+        html_file = os.path.join(file_dir,cell_label,'{assay}', cell_label+'_{assay}_fastqc.html')
     shell:
         """
-        bowtie2 --very-sensitive -x /index/hg38/bowtie2/hg38.fa  -U {input.reads} --threads 48 | samtools view -@ 48 -bS - > {output}
+        fastqc -t 48 {input.raw_read}
         """
 
+rule grouped_quality:
+    run:
+        if not os.path.exists(os.path.join(file_dir,cell_label,"Quality")):
+            os.makedirs(os.path.join(file_dir,cell_label,"Quality"))
+        for assay in assay_list:
+            os.replace(os.path.join(file_dir,cell_label,assay,cell_label+'_'+assay+'_fastqc.html'), os.path.join(file_dir,cell_label,"Quality",cell_label+'_'+assay+'_fastqc.html'))
+            os.replace(os.path.join(file_dir,cell_label,assay,cell_label+'_'+assay+'_fastqc.zip'), os.path.join(file_dir,cell_label,"Quality",cell_label+'_'+assay+'_fastqc.zip'))
+        multiqc .
+
+
+rule align_to_genome:
+    input:
+        read = os.path.join(file_dir,cell_label,'{assay}',cell_label+'_R2_{assay}.fq.gz')
+    output:
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_mapped.bam')
+    shell:
+        """
+        bowtie2 --very-sensitive -x /index/hg38/bowtie2/hg38.fa  -U {input.read} --threads 6 | samtools view -@ 6 -bS - > {output.bam}
+        """
 rule coordinate_sort_index_1:
     input:
-        bam = rules.alignment.output.bam
+        bam = rules.align_to_genome.output.bam
     output:
-        bam = os.path.join(BAM_DIR,  '{sample}_mapped.sorted.bam'),
-        index = os.path.join(BAM_DIR, '{sample}_mapped.sorted.bam.bai')
-    message:
-        "Coordinate sorting and indexing the alignment file"
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam'),
+        txt = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam.bai')
     shell:
         """
-        samtools sort -@ 48 -o {output.bam} {input.bam}; samtools index -@ 48 {output.bam}
+        samtools sort -@ 6 -o {output.bam} {input.bam}; samtools index -@ 6 {output.bam}
         """
-    
-rule mark_duplicates:
+
+rule remove_duplicates:
     input:
-        bam=rules.coordinate_sort_index_1.output.bam
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam')
     output:
-        bam= os.path.join(BAM_DIR, SAMPLE+'_md.bam'),
-        metrics= os.path.join(BAM_DIR, SAMPLE+"_md.txt")
-    params:
-	   picard = PICARD_JAR
-    message:
-        "Removing duplicates from the bam file."
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam'),
+        txt = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.txt')
     shell:
         """
-        java -jar {params.picard} MarkDuplicates -I {input.bam} -O {output.bam} -M {output.metrics} --REMOVE_DUPLICATES true
+        java -jar /home/darragh/bin/picard.jar MarkDuplicates -I {input.bam} -O {output.bam} -M {output.txt} --REMOVE_DUPLICATES true
         """
 
 rule coordinate_sort_index_2:
     input:
-        bam = rules.mark_duplicates.output.bam
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam')
     output:
-        bam = os.path.join(BAM_DIR,  '{sample}_md.sorted.bam'),
-        index = os.path.join(BAM_DIR, '{sample}_md.sorted.bam.bai')
-    message:
-        "Coordinate sorting and indexing the alignment file"
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam'),
+        txt = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam.bai')
     shell:
         """
-        samtools sort -@ 48 -o {output.bam} {input.bam}; samtools index -@ 48 {output.bam}
+        samtools sort -@ 6 -o {output.bam} {input.bam}; samtools index -@ 6 {output.bam}
         """
 
-rule convert_bigwig_and_normalize:
+rule make_bigwigs:
     input:
-        bam = rules.coordinate_sort_index_2.output.bam
+        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam')
     output:
-        bigwig = os.path.join(BIGWIG_DIR, '{sample}.bigwig')
-    params:
-        extra = "-of bigwig -bs 10 --normalizeUsing CPM --effectiveGenomeSize 2913022398"
+        bigwig = os.path.join(file_dir,cell_label,'{assay}','Bigwig','{assay}_maked_dup.sorted.bw')
     shell:
         """
-        bamCoverage {params.extra} -b {input.bam} -o {output.bigwig} -p 48
+        bamCoverage -of bigwig -p 6 --normalizeUsing CPM -b {input.bam} -o {output.bigwig}
         """
 
 rule call_peaks:
     input:
-        bam = rules.coordinate_sort_index_2.output.bam
+        bam = os.path.join(file_dir,'{cell}',assay_label,'Bam',assay_label+'_maked_dup.sorted.bam'),
+        input = os.path.join(file_dir,'{cell}',"Input",'Bam',"Input"+'.sorted.bam')
     output:
-        BroadPeak = os.path.join(PEAK_DIR, '{sample}_peaks.broadPeak')
+        peak = os.path.join(file_dir,'{cell}',assay_label,'Peak',assay_label+'_peaks.broadPeak')
     params:
-        dir = PEAK_DIR
-        control = CONTROL
-    messaage:
-        "Peak calling."
+        name = assay_label,
+        dir = os.path.join(file_dir,'{cell}',assay_label,'Peak')
     shell:
         """
-        macs2 callpeak -t {input.bam} -f BAM -c {params.control} -g hs --outdir {params.dir} -n {wildcards.sample}
+        macs2 callpeak -t {input.bam} -c {input.input} -q 0.05 -n {params.name} -f BAM -g hs --outdir {params.dir} --broad --broad-cutoff 0.01
         """
-        
-rule preprocess_peaks:
-	input:
-		BroadPeak = rules.call_peaks.output.BroadPeak,
-	output:
-		bed = os.path.join(PEAK_DIR, '{sample}_processed_peaks.bed')
-	params:
-		BlackList = BLACK_LIST
-	message:
-		"Preprocessing peaks."
-	shell:
-		"""
-		bedtools subtract -a {input.BroadPeak} -b {params.BlackList} > {output.bed}
-		"""
+
+
+#bamCoverage -of bigwig -p 4 --normalizeUsing CPM -b reads.bam -o {output.bigwig}
