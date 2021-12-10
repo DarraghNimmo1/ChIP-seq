@@ -23,7 +23,7 @@ ASSAY = config['assay_type']
 
 rule all:
     input:
- #       expand(os.path.join(file_dir,cell_label,'{assay}', cell_label+'_{assay}_fastqc.html'), assay = ASSAY),
+        expand(os.path.join(file_dir,cell_label,'{assay}', cell_label+'_{assay}_fastqc.html'), assay = ASSAY),
         expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam'), assay = ASSAY),
         expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam'), assay = ASSAY),
         expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam'), assay = ASSAY),
