@@ -1,0 +1,9 @@
+results: '/home/darragh/ChIP-seq_2/data/concat/Breast/MDAMB468/SUZ12/hg19/results'
+
+sample: 'SUZ12' # What is the sample name - make sure fastq reads are called: {sample}_read1.fq.gz , {sample}_read2.fq.gz
+
+reads: '/home/darragh/ChIP-seq_2/data/concat/Breast/MDAMB468/SUZ12/hg19/reads'
+
+exclusion_list: '/home/darragh/ENCODE_resources/ENCFF001TDO_hg19_exclusion.bed'
+
+input_bam: '/home/darragh/ChIP-seq_2/data/concat/Breast/MDAMB468/Input/hg19/results/Bam/Input_marked_dups.sorted.bam'
