@@ -1,4 +1,3 @@
-
 ################################################
 #ChIP-seq processing script
 #Darragh Nimmo
@@ -6,129 +5,104 @@
 #################################################
 
 import os
-import glob
+import functools
 
-file_dir = "/home/darragh/ChIP-seq_2/data/concat/PDAC"
+configfile: 'config.yaml'
 
-file_list = []
+READS_DIR = config['reads']
 
-cell_label = "HPEC"
-#assay_label = "H3K27me3"
+SAMPLE = config['sample']
 
-configfile: 'config.yml'
+INPUT_BAM = config['input_bam']
 
+EXCLUSION_HG19 = config['exclusion_list']
 
-#CELL = config['cell_type']
-ASSAY = config['assay_type']
+directory_function = functools.partial(os.path.join, config['results'])
+BAM_DIR = directory_function('Bam')
+BIGWIG_DIR = directory_function('BigWig')
+PEAK_DIR = directory_function('Peak')
 
 rule all:
-    input:
-        expand(os.path.join(file_dir,cell_label,'{assay}', cell_label+'_{assay}_fastqc.html'), assay = ASSAY),
-        expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam'), assay = ASSAY),
-        expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam'), assay = ASSAY),
-        expand(os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam'), assay = ASSAY),
-        expand(os.path.join(file_dir,cell_label,'{assay}','Bigwig','{assay}_maked_dup.sorted.bw'), assay = ASSAY)
-
-
-
-
-rule concatenate_lanes:
-    run:
-        for assay_label in assay_list:
-            if not os.path.exists('/home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label):
-                os.makedirs('/home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label)#
-
-                os.system('cp /home/darragh/ChIP-seq_2/data/'+cell_label+'*'+assay_label+'*/*.fastq.gz' ' /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+ assay_label)#
-
-            os.system('zcat /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label+'/*.fastq.gz | pigz >  /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label+'/'+cell_label+'_'+assay_label+'.fq.gz')
-            os.system('rm /home/darragh/ChIP-seq_2/data/concat/'+cell_label+'/'+assay_label+'/*.fastq.gz')
-
-
-rule check_quality:
-    input:
-        raw_read = os.path.join(file_dir,cell_label,'{assay}', cell_label+'_R2_{assay}.fq.gz')
-    output:
-        html_file = os.path.join(file_dir,cell_label,'{assay}', cell_label+'_{assay}_fastqc.html')
-    shell:
-        """
-        fastqc -t 48 {input.raw_read}
-        """
-
-rule grouped_quality:
-    run:
-        if not os.path.exists(os.path.join(file_dir,cell_label,"Quality")):
-            os.makedirs(os.path.join(file_dir,cell_label,"Quality"))
-        for assay in assay_list:
-            os.replace(os.path.join(file_dir,cell_label,assay,cell_label+'_'+assay+'_fastqc.html'), os.path.join(file_dir,cell_label,"Quality",cell_label+'_'+assay+'_fastqc.html'))
-            os.replace(os.path.join(file_dir,cell_label,assay,cell_label+'_'+assay+'_fastqc.zip'), os.path.join(file_dir,cell_label,"Quality",cell_label+'_'+assay+'_fastqc.zip'))
-        multiqc .
+        input:
+                expand(os.path.join(PEAK_DIR, '{sample}_peaks.preprocessed.bed'), sample = SAMPLE),
+                expand(os.path.join( BIGWIG_DIR, '{sample}_marked_dups.sorted.bw'), sample = SAMPLE)
 
 
 rule align_to_genome:
     input:
-        read = os.path.join(file_dir,cell_label,'{assay}',cell_label+'_R2_{assay}.fq.gz')
+        read =  os.path.join(READS_DIR, 'MDAMB468_{sample}.fq.gz')
     output:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_mapped.bam')
+        bam = temp(os.path.join(BAM_DIR, '{sample}_mapped.bam'))
     shell:
         """
-        bowtie2 --very-sensitive -x /index/hg38/bowtie2/hg38.fa  -U {input.read} --threads 6 | samtools view -@ 6 -bS - > {output.bam}
+        bowtie2 --very-sensitive -x /index/hg19/bowtie2/hg19  -U {input.read} --threads 24 | samtools view -@ 24 -bS - > {output.bam}
         """
 rule coordinate_sort_index_1:
     input:
         bam = rules.align_to_genome.output.bam
     output:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam'),
-        txt = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam.bai')
+        bam = temp(os.path.join(BAM_DIR, '{sample}_mapped.sorted.bam' )),
+        txt = temp(os.path.join(BAM_DIR, '{sample}_mapped.sorted.bam.bai'))
     shell:
         """
-        samtools sort -@ 6 -o {output.bam} {input.bam}; samtools index -@ 6 {output.bam}
+        samtools sort -@ 24 -o {output.bam} {input.bam}; samtools index -@ 24 {output.bam}
         """
 
 rule remove_duplicates:
     input:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}.sorted.bam')
+        bam = rules.coordinate_sort_index_1.output.bam
     output:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam'),
-        txt = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.txt')
+        bam = temp(os.path.join(BAM_DIR, '{sample}_marked_dups.bam')),
+        txt = temp(os.path.join(BAM_DIR, '{sample}_marked_dups.txt'))
     shell:
         """
-        java -jar /home/darragh/bin/picard.jar MarkDuplicates -I {input.bam} -O {output.bam} -M {output.txt} --REMOVE_DUPLICATES true
+        java -jar /home/darragh/picard.jar MarkDuplicates -I {input.bam} -O {output.bam} -M {output.txt} --REMOVE_DUPLICATES true
         """
 
 rule coordinate_sort_index_2:
     input:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.bam')
+        bam = rules.remove_duplicates.output.bam
     output:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam'),
-        txt = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam.bai')
+        bam = os.path.join(BAM_DIR, '{sample}_marked_dups.sorted.bam' ),
+        txt = os.path.join(BAM_DIR, '{sample}_marked_dups.sorted.bam.bai' )
     shell:
         """
-        samtools sort -@ 6 -o {output.bam} {input.bam}; samtools index -@ 6 {output.bam}
+        samtools sort -@ 24 -o {output.bam} {input.bam}; samtools index -@ 24 {output.bam}
         """
-
 rule make_bigwigs:
     input:
-        bam = os.path.join(file_dir,cell_label,'{assay}','Bam','{assay}_maked_dup.sorted.bam')
+        bam = rules.coordinate_sort_index_2.output.bam
     output:
-        bigwig = os.path.join(file_dir,cell_label,'{assay}','Bigwig','{assay}_maked_dup.sorted.bw')
+        bigwig = os.path.join( BIGWIG_DIR, '{sample}_marked_dups.sorted.bw')
     shell:
         """
-        bamCoverage -of bigwig -p 6 --normalizeUsing CPM -b {input.bam} -o {output.bigwig}
+        bamCoverage -of bigwig -p 24 --normalizeUsing CPM -b {input.bam} -o {output.bigwig}
         """
 
 rule call_peaks:
     input:
-        bam = os.path.join(file_dir,'{cell}',assay_label,'Bam',assay_label+'_maked_dup.sorted.bam'),
-        input = os.path.join(file_dir,'{cell}',"Input",'Bam',"Input"+'.sorted.bam')
+        bam = rules.coordinate_sort_index_2.output.bam,
+        input = INPUT_BAM
     output:
-        peak = os.path.join(file_dir,'{cell}',assay_label,'Peak',assay_label+'_peaks.broadPeak')
+        peak = os.path.join(PEAK_DIR, '{sample}_peaks.narrowPeak')
     params:
-        name = assay_label,
-        dir = os.path.join(file_dir,'{cell}',assay_label,'Peak')
+        name = SAMPLE,
+        dir = PEAK_DIR
     shell:
         """
-        macs2 callpeak -t {input.bam} -c {input.input} -q 0.05 -n {params.name} -f BAM -g hs --outdir {params.dir} --broad --broad-cutoff 0.01
+        macs2 callpeak -t {input.bam} -c {input.input} -q 0.05 -n {params.name} -f BAM -g hs --outdir {params.dir}
         """
+#--broad --broad-cutoff 0.05
+#Set Q value
 
-
-#bamCoverage -of bigwig -p 4 --normalizeUsing CPM -b reads.bam -o {output.bigwig}
+rule preprocess_peaks:
+        input:
+                peak = rules.call_peaks.output.peak
+        output:
+                peak = os.path.join(PEAK_DIR, '{sample}_peaks.preprocessed.bed')
+        params:
+                exclude = EXCLUSION_HG19
+        shell:
+                """
+                bedtools intersect -v -a {input.peak} -b {params.exclude} | grep -P 'chr[\dXY]+[ \t]' > {output.peak}
+                """
