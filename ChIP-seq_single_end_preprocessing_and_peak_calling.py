@@ -25,6 +25,8 @@ PEAK_DIR = directory_function('Peak')
 #ls *fq.gz |while read line ; do bbduk.sh in="$line" out=trimmed/"$line" ref=/usr/local/bin/resources/adapters.fa k=23 mink=11 hdist=1 ktrim=r int=f ; done
 
 #macs2 callpeak -t ~/New/ATAC-seq/MCF10A/ATAC_G/results/Bam/ATAC_G_macs_input.bedpe ~/New/ATAC-seq/MCF10A/ATAC_H/results/Bam/ATAC_H_macs_input.bedpe --nomodel --shift -100 --extsize 200 --broad -f BED --name MCF10A -g hs --outdir /home/darragh/New/ATAC-seq/MCF10A/naive
+#bedtools subtract -a MCF10A_peaks.broadPeak -b /home/darragh/ENCODE_resources/ENCFF001TDO_hg19_exclusion.bed | grep -P 'chr[\dXY]+[ \t]' > MCF10A_peaks.preprocessed.bed
+#bash /home/darragh/Scripts/ATAC/naive_overlap.sh /home/darragh/New/ATAC-seq/MCF7/ATAC_E/results/Peak/ATAC_E_peaks_preprocessed.bed /home/darragh/New/ATAC-seq/MCF7/ATAC_F/results/Peak/ATAC_F_peaks_preprocessed.bed MCF7_peaks.preprocessed.bed > MCF7_peaks.preprocessed.naive.bed
 
 rule all:
         input:
