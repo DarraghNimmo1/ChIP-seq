@@ -24,6 +24,8 @@ PEAK_DIR = directory_function('Peak')
 
 #ls *fq.gz |while read line ; do bbduk.sh in="$line" out=trimmed/"$line" ref=/usr/local/bin/resources/adapters.fa k=23 mink=11 hdist=1 ktrim=r int=f ; done
 
+#macs2 callpeak -t ~/New/ATAC-seq/MCF10A/ATAC_G/results/Bam/ATAC_G_macs_input.bedpe ~/New/ATAC-seq/MCF10A/ATAC_H/results/Bam/ATAC_H_macs_input.bedpe --nomodel --shift -100 --extsize 200 --broad -f BED --name MCF10A -g hs --outdir /home/darragh/New/ATAC-seq/MCF10A/naive
+
 rule all:
         input:
                 expand(os.path.join(PEAK_DIR, '{sample}_peaks.preprocessed.bed'), sample = SAMPLE),
