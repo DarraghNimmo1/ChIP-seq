@@ -22,6 +22,8 @@ BAM_DIR = directory_function('Bam')
 BIGWIG_DIR = directory_function('BigWig')
 PEAK_DIR = directory_function('Peak')
 
+#ls *fq.gz |while read line ; do bbduk.sh in="$line" out=trimmed/"$line" ref=/usr/local/bin/resources/adapters.fa k=23 mink=11 hdist=1 ktrim=r int=f ; done
+
 rule all:
         input:
                 expand(os.path.join(PEAK_DIR, '{sample}_peaks.preprocessed.bed'), sample = SAMPLE),
